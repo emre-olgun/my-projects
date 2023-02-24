@@ -1,0 +1,95 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: |
+  Kittens Carousel is a static website application deployed on AWS Simple Storage Service (S3), served through Cloudfront and Route 53 using AWS Cloudformation Service.
+Parameters:
+  DomainName:
+    Description: DNS Name of existing Amazon Route 53 hosted zone ex. devopsemre.com
+    Type: AWS::Route53::HostedZone::Id
+  KittensDomainName:
+    Description: Full domain name for the App. ex. www.devopsemre.com
+    Type: String
+    AllowedPattern: (?!-)[a-zA-Z0-9-.]{1,63}(?<!-)  #REGEX'e göre
+
+Resources:
+  KittensBucket:
+    Type: AWS::S3::Bucket
+    Properties: 
+      AccessControl: PublicRead
+      BucketName: !Ref KittensDomainName
+      WebsiteConfiguration: 
+        IndexDocument: index.html
+
+  KittensBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref KittensBucket #policy'i hangi bucketta yapacağımızı gösterir
+      PolicyDocument:     
+        Statement:
+          - Sid: PublicReadforStaticWebsite
+            Effect: Allow #S3ten object almaya izin veriyor.
+            Principal: '*'
+            Action: s3:GetObject
+            Resource: !Join ['', ['arn:aws:s3:::', !Ref 'KittensBucket', /*]] #join fonksiyonu tırnak içindeki ifadeleri birleştirir. Bu ifade de bizim bucketın ARN'si. Formatı: !Join [ delimiter, [ comma-delimited list of values ] ]
+
+  KittensCertificate:
+    Type: AWS::CertificateManager::Certificate
+    Properties:
+      CertificateTransparencyLoggingPreference: ENABLED #siteye saldırı olduğunda bizi güvence altına almak için bir koruma.
+      DomainName: !Ref KittensDomainName #Sertifika talep ettiğimiz adres
+      DomainValidationOptions:
+        - DomainName: !Ref KittensDomainName #sub-domain dahil
+          HostedZoneId: !Ref DomainName #naked domain
+      ValidationMethod: DNS
+
+  KittensCloudfront:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Aliases: # S3'ten aldığı endpointi bizim sitenin adına çeviriyor. CNAME'ler
+        - !Ref KittensDomainName
+        Comment: Cloudfront Distribution pointing to Kittens S3 bucket
+        DefaultCacheBehavior: 
+          AllowedMethods:
+            - GET
+            - HEAD
+          Compress: true #çok yer kaplamadan cacheleme yapsın
+          ForwardedValues:
+            QueryString: true
+            Cookies:
+              Forward: none
+          TargetOriginId: KittensOrigin #cloudfronttaki target bölümünü seçiyoruz. Default cache policy seçtiğimiz için
+          ViewerProtocolPolicy: allow-all #konsoldan seçtiğimiz HTTP-HTTPS kısmı
+        DefaultRootObject: index.html
+        Enabled: true
+        HttpVersion: 'http2'
+        Origins: #load balancer, s3, domain name vs. kullanılabiliyor.
+        - DomainName: !Select [2, !Split ["/", !GetAtt KittensBucket.WebsiteURL]] # Split URL ismini 2. kısmından ayırıyor. yani başındaki sub*-domaini almıyor. 
+          Id: KittensOrigin #yukarıda targetta belirttik
+          CustomOriginConfig:
+            OriginProtocolPolicy: http-only
+        PriceClass: PriceClass_All #cache'leme için tüm sınıfları kullan diyoruz. 3 farklı sınıf vardı.
+        ViewerCertificate:
+          AcmCertificateArn: !Ref KittensCertificate #yukarıda HTTPS kullandığımız için certifikaya referans yapıyoruz.
+          SslSupportMethod: sni-only # HTTPS bağlantılar sadece server name indication (SNI) requestleri kabul eder.
+
+  KittensRecordSet:
+    Type: AWS::Route53::RecordSetGroup
+    Properties:
+      HostedZoneId: !Ref DomainName
+      RecordSets: 
+        - Name: !Ref KittensDomainName
+          Type: A
+          AliasTarget:
+            DNSName: !GetAtt KittensCloudfront.DomainName
+            HostedZoneId: Z2FDTNDATAQYW2 # dökümantasyonda der ki cloudformation distribution olarak referans veriyorsak bu kodu kullan.
+            
+Outputs: #3 tane çıktısı oluyor.
+  BucketName: 
+    Description: S3 Bucket URL for Kittens Website
+    Value: !GetAtt KittensBucket.WebsiteURL
+  CloudfrontEndpoint:
+    Description: Endpoint for Kittens Cloudfront
+    Value: !GetAtt KittensCloudfront.DomainName
+  FullDomainName:
+    Description: Full Domain Name of my Application # müşteriye sunacağımız düzgün adres
+    Value: !Ref KittensDomainName
