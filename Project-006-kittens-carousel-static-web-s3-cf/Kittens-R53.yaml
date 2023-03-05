@@ -34,7 +34,7 @@ Resources:
   KittensCertificate:
     Type: AWS::CertificateManager::Certificate
     Properties:
-      CertificateTransparencyLoggingPreference: ENABLED #siteye saldırı olduğunda bizi güvence altına almak için bir koruma.
+      CertificateTransparencyLoggingPreference: ENABLED #koruma katmanı
       DomainName: !Ref KittensDomainName #Sertifika talep ettiğimiz adres
       DomainValidationOptions:
         - DomainName: !Ref KittensDomainName #sub-domain dahil
