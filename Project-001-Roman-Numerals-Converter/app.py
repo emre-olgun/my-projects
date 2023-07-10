@@ -12,7 +12,7 @@ def convert(decimal_num):
     return num_to_roman
 
 
-@app.route('/', methods=['POST', 'GET'])
+@app.route('/hesap', methods=['POST', 'GET'])
 def main_post():
     if request.method == 'POST':
         alpha = request.form['number']
